@@ -1,0 +1,13 @@
+{
+  "daemon": "clasp_focus",
+  "log_name": "focusd@clasp",
+  "control_machines": ["CLASPTCS"],
+  "serial_port": "/dev/focuser",
+  "serial_baud": 115200,
+  "serial_timeout": 5,
+  "idle_loop_delay": 5,
+  "moving_loop_delay": 0.5,
+  "move_timeout": 180,
+  "home_reset_timeout": 2,
+  "soft_step_limits": [-50000, 50000]
+}
