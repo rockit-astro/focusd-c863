@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+#
+# This file is part of the Robotic Observatory Control Kit (rockit)
+#
+# rockit is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# rockit is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with rockit.  If not, see <http://www.gnu.org/licenses/>.
+
+"""Daemon for controlling a Physik Instrumente C-863 focus controller via Pyro"""
+
+import argparse
+import datetime
+import threading
+import Pyro4
+from warwick.observatory.common.helpers import pyro_client_matches
+from warwick.observatory.servo import CommandStatus, Config, ServoState
+
+# Set automatically when generating RPM package
+SOFTWARE_VERSION = "UNKNOWN"
+
+
+class ServoDaemon:
+    """Daemon interface for Physik Instrumente C-863 focus controller"""
+    def __init__(self, config):
+        self.wait_condition = threading.Condition()
+        self._status_lock = threading.Lock()
+        self.config = config
+
+        self._port = None
+        self._port_error = False
+
+        self._state = ServoState.Disabled
+        self._current_steps = 0
+        self._target_steps = 0
+
+        threading.Thread(target=self.__run, daemon=True).start()
+
+
+    def __run(self):
+        """Background thread managing communication over the serial connection"""
+        while True:
+            # TODO
+            with self.wait_condition:
+                self.wait_condition.wait(10)
+
+    @Pyro4.expose
+    def report_status(self):
+        """Returns a dictionary containing the current focuser state"""
+        with self._status_lock:
+            return {
+                'date': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'software_version': SOFTWARE_VERSION,
+                'state': self._state,
+                'state_label': ServoState.label(self._state),
+                'current_steps': self._current_steps,
+                'target_steps': self._target_steps
+            }
+
+    @Pyro4.expose
+    def move(self, steps, relative=True):
+        """Request a to move a specific step position"""
+        if not pyro_client_matches(self.config.control_ips):
+            return CommandStatus.InvalidControlIP
+
+        # TODO
+        return CommandStatus.Failed
+
+    @Pyro4.expose
+    def stop(self):
+        """Stop any in progress movement"""
+        if not pyro_client_matches(self.config.control_ips):
+            return CommandStatus.InvalidControlIP
+
+        # TODO
+        return CommandStatus.Failed
+
+    @Pyro4.expose
+    def initialize(self):
+        """Connects to the focuser hardware"""
+        if not pyro_client_matches(self.config.control_ips):
+            return CommandStatus.InvalidControlIP
+
+        # TODO
+        return CommandStatus.Failed
+
+    @Pyro4.expose
+    def shutdown(self):
+        """Disconnects from the focuser hardware"""
+        if not pyro_client_matches(self.config.control_ips):
+            return CommandStatus.InvalidControlIP
+
+        # TODO
+        return CommandStatus.Failed
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Servo controller server')
+    parser.add_argument('config', help='Path to configuration json file')
+    args = parser.parse_args()
+    _config = Config(args.config)
+    _config.daemon.launch(ServoDaemon(_config))
