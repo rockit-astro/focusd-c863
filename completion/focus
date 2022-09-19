@@ -1,0 +1,12 @@
+_focus()
+{
+    compopt +o default
+    local cur opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    opts="set offset stop status json zero init kill"
+    COMPREPLY=($(compgen -W "${opts}" -- ${cur}))
+    return 0
+}
+
+complete -F _focus focus

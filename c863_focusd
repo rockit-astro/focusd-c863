@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+#
+# This file is part of the Robotic Observatory Control Kit (rockit)
+#
+# rockit is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# rockit is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with rockit.  If not, see <http://www.gnu.org/licenses/>.
+
+"""Daemon for controlling a Physik Instrumente C-863 focus controller via Pyro"""
+
+import argparse
+import datetime
+import re
+import threading
+import time
+import traceback
+import sys
+import Pyro4
+import serial
+from astropy.time import Time
+import astropy.units as u
+from rockit.common import log, TryLock
+from rockit.common.helpers import pyro_client_matches
+from rockit.focuser.c863 import CommandStatus, Config, FocuserStatus
+
+
+class C863FocuserDaemon:
+    """Daemon interface for Physik Instrumente C-863 focus controller"""
+    def __init__(self, config):
+        self._command_lock = threading.Lock()
+        self._config = config
+
+        self._port = None
+        self._port_error = False
+        self._position_regex = re.compile(b'P:(?P<position>[+-]\d+)\r\n\x03')
+        self._state_lock = threading.Lock()
+        self._is_moving = False
+        self._current_steps = 0
+        self._target_steps = 0
+        self.wait_condition = threading.Condition()
+
+    @Pyro4.expose
+    def report_status(self):
+        """Returns a dictionary containing the current focuser state"""
+        with self._state_lock:
+            data = {
+                'date': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'status': FocuserStatus.Disabled
+            }
+
+            if self._port is None:
+                return data
+
+            state = FocuserStatus.Moving if self._is_moving else FocuserStatus.Idle
+            data.update({
+                'status': state,
+                'status_label': FocuserStatus.label(state),
+                'current_steps': self._current_steps,
+                'target_steps': self._target_steps
+            })
+
+            return data
+
+    def _wait_for_movement_completion(self, port):
+        # Wait for it to stop moving
+        start = Time.now()
+        port.flushInput()
+        while True:
+            port.write(b'\\')
+            status = port.read(4)
+            port.write(b'\'')
+            position = port.read(16)
+            with self._state_lock:
+                self._is_moving = status[0] != 48
+                match = self._position_regex.match(position)
+                if match:
+                    self._current_steps = int(match.group('position'))
+                else:
+                    print(f'failed to parse position string `{position}`')
+                    self._current_steps = 0
+
+                if not self._is_moving:
+                    return True
+
+            if Time.now() - start > self._config.move_timeout * u.s:
+                return False
+
+            time.sleep(0.1)
+
+    @Pyro4.expose
+    def move(self, steps, relative=True):
+        """Request a to move a specific step position"""
+        if not pyro_client_matches(self._config.control_ips):
+            return CommandStatus.InvalidControlIP
+
+        with TryLock(self._command_lock) as success:
+            if not success:
+                return CommandStatus.Blocked
+
+            if self._port is None:
+                return CommandStatus.NotConnected
+
+            with self._state_lock:
+                target_steps = self._target_steps + steps if relative else steps
+                if target_steps < 0 or target_steps > self._config.max_position:
+                    return CommandStatus.PositionOutsideLimits
+
+                self._target_steps = target_steps
+
+            self._port.write(f'MA{self._target_steps}\r'.encode('ascii'))
+            if not self._wait_for_movement_completion(self._port):
+                return CommandStatus.Failed
+
+            return CommandStatus.Succeeded
+
+    @Pyro4.expose
+    def stop(self):
+        """Stop any in progress movement"""
+        if not pyro_client_matches(self._config.control_ips):
+            return CommandStatus.InvalidControlIP
+
+        self._port.write(b'!')
+        return CommandStatus.Succeeded
+
+    @Pyro4.expose
+    def initialize(self):
+        """Connects to the device"""
+        if not pyro_client_matches(self._config.control_ips):
+            return CommandStatus.InvalidControlIP
+
+        with TryLock(self._command_lock) as success:
+            if not success:
+                return CommandStatus.Blocked
+
+            if self._port is not None:
+                return CommandStatus.NotDisconnected
+
+            port = None
+            try:
+                port = serial.Serial(self._config.serial_port,
+                                     self._config.serial_baud,
+                                     timeout=self._config.serial_timeout)
+                log.info(self._config.log_name, 'connected to focuser')
+
+                # Flush any stale state
+                port.flushInput()
+                port.flushOutput()
+
+                def send(cmd):
+                    if port.write(cmd.encode('ascii')) != len(cmd):
+                        raise serial.SerialException('Failed to send command')
+
+                # Select default controller
+                send('\x010')
+
+                # Enable servo and adjust PID D term
+                send('MN\r')
+                send('DP350\r')
+
+                # Find home
+                send('FE2\r')
+                send('WS0,DH\r')
+
+                self._wait_for_movement_completion(port)
+
+                send(f'MA{self._config.nominal_focus_position}\r')
+                self._wait_for_movement_completion(port)
+
+                log.info(self._config.log_name, 'Focuser initialized')
+                with self._state_lock:
+                    self._port = port
+
+                return CommandStatus.Succeeded
+            except Exception:
+                print('error while initializing focuser')
+                traceback.print_exc(file=sys.stdout)
+                if port:
+                    port.close()
+                return CommandStatus.Failed
+
+    @Pyro4.expose
+    def shutdown(self):
+        """Disconnects from the device"""
+        if not pyro_client_matches(self._config.control_ips):
+            return CommandStatus.InvalidControlIP
+
+        with TryLock(self._command_lock) as success:
+            if not success:
+                return CommandStatus.Blocked
+
+            if self._port is None:
+                return CommandStatus.NotConnected
+
+            with self._state_lock:
+                self._port.write(b'RT\r')
+                self._port.close()
+                self._port = None
+
+            log.info(self._config.log_name, 'Focuser disconnected')
+            return CommandStatus.Succeeded
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Focuser server')
+    parser.add_argument('config', help='Path to configuration json file')
+    args = parser.parse_args()
+    _config = Config(args.config)
+    _config.daemon.launch(C863FocuserDaemon(_config))
