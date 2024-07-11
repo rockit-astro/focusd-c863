@@ -1,7 +1,7 @@
 {
   "daemon": "onemetre_red_focuser",
   "log_name": "focusd@onemetre",
-  "control_machines": ["OneMetreTCS", "OneMetreDome"],
+  "control_machines": ["OneMetreDAS", "OneMetreTCS", "OneMetreDome"],
   "serial_port": "/dev/focuser",
   "serial_baud": 9600,
   "serial_timeout": 5,
