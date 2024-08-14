@@ -23,7 +23,7 @@ CONFIG_SCHEMA = {
     'type': 'object',
     'additionalProperties': False,
     'required': ['daemon', 'log_name', 'control_machines', 'serial_port', 'serial_baud', 'serial_timeout',
-                 'moving_loop_delay', 'move_timeout'],
+                 'min_position', 'max_position', 'moving_loop_delay', 'move_timeout'],
     'properties': {
         'daemon': {
             'type': 'string',
@@ -53,11 +53,18 @@ CONFIG_SCHEMA = {
         },
         'nominal_focus_position': {
             'type': 'integer',
-            'minimum': 0
+            'minimum': -25000,
+            'maximum': 58000
+        },
+        'min_position': {
+            'type': 'integer',
+            'minimum': -25000,
+            'maximum': 58000
         },
         'max_position': {
             'type': 'integer',
-            'minimum': 0
+            'minimum': -25000,
+            'maximum': 58000
         },
         'moving_loop_delay': {
             'type': 'number',
@@ -92,6 +99,7 @@ class Config:
         self.serial_timeout = int(config_json['serial_timeout'])
 
         self.nominal_focus_position = int(config_json['nominal_focus_position'])
+        self.min_position = int(config_json['min_position'])
         self.max_position = int(config_json['max_position'])
         self.moving_loop_delay = int(config_json['moving_loop_delay'])
         self.move_timeout = int(config_json['move_timeout'])

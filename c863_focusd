@@ -111,7 +111,7 @@ class C863FocuserDaemon:
 
             with self._state_lock:
                 target_steps = self._target_steps + steps if relative else steps
-                if target_steps < 0 or target_steps > self._config.max_position:
+                if target_steps < self._config.min_position or target_steps > self._config.max_position:
                     return CommandStatus.PositionOutsideLimits
 
                 self._target_steps = target_steps
@@ -168,9 +168,8 @@ class C863FocuserDaemon:
 
                 # Find home
                 send('FE2\r')
-                send('WS0,DH\r')
-
                 self._wait_for_movement_completion(port)
+                send('DH\r')
 
                 send(f'MA{self._config.nominal_focus_position}\r')
                 self._wait_for_movement_completion(port)
