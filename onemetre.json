@@ -5,7 +5,7 @@
   "serial_port": "/dev/focuser",
   "serial_baud": 9600,
   "serial_timeout": 5,
-  "nominal_focus_position": 55000,
+  "nominal_focus_position": 0,
   "min_position": -25000,
   "max_position": 58000,
   "moving_loop_delay": 0.5,
