@@ -1,6 +1,6 @@
 Name:      rockit-focuser-c863
 Version:   %{_version}
-Release:   1
+Release:   1%{dist}
 Summary:   Physik Instrumente C-863 Mercury Servo Controller
 Url:       https://github.com/rockit-astro/focusd-c863
 License:   GPL-3.0

@@ -1,6 +1,6 @@
 Name:           python3-rockit-focuser-c863
 Version:        %{_version}
-Release:        1
+Release:        1%{dist}
 License:        GPL3
 Summary:        Common backend code for Physik Instrumente C-863 Mercury Servo Controller daemon
 Url:            https://github.com/rockit-astro/focusd-c863
