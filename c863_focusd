@@ -18,7 +18,6 @@
 """Daemon for controlling a Physik Instrumente C-863 focus controller via Pyro"""
 
 import argparse
-import datetime
 import re
 import threading
 import time
@@ -53,7 +52,7 @@ class C863FocuserDaemon:
         """Returns a dictionary containing the current focuser state"""
         with self._state_lock:
             data = {
-                'date': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'date': Time.now().strftime('%Y-%m-%dT%H:%M:%SZ'),
                 'status': FocuserStatus.Disabled
             }
 
